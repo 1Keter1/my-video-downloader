@@ -2,6 +2,7 @@ meta:
   environment: python
   toolchain:
     name: pip
+    version: 3.10
 run:
   command: gunicorn --bind 0.0.0.0:3000 --workers 1 --threads 8 --worker-class gthread --timeout 300 app:app
   containerPort: 3000

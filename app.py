@@ -14,11 +14,9 @@ app = Flask(__name__)
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-
 # ⬇️ ДОБАВЛЕНО: глобальное хранилище прогресса + блокировка
 download_progress = {}
 progress_lock = threading.Lock()
-
 
 # ⬇️ COOKIES: ищем файл cookies в папке проекта (локально) или в /data (Amvera)
 cookies_file = None
@@ -38,7 +36,6 @@ for candidate in cookies_candidates:
         break
 else:
     print("⚠️ Файл cookies не найден. Скачивание с YouTube/TikTok может не работать.", flush=True)
-
 
 # ⬇️ ДОБАВЛЕНО: класс-хук, который yt-dlp будет вызывать при каждом изменении прогресса
 class MyProgressHook:
@@ -76,7 +73,6 @@ class MyProgressHook:
                         'status': 'error',
                         'error': 'Download failed',
                     })
-
 
 def download_video(url):
     """Скачивает видео, возвращает (путь, download_name, download_id)."""
@@ -122,7 +118,6 @@ def download_video(url):
     download_name = os.path.basename(path).split('_', 1)[-1]
     return path, download_name, file_id
 
-
 @app.route('/', methods=['GET', 'POST'])
 def index():
     error = None
@@ -163,7 +158,6 @@ def index():
 
     return render_template('index.html', error=error)
 
-
 # ⬇️ ДОБАВЛЕНО: SSE-поток с прогрессом
 @app.route('/stream')
 def stream():
@@ -180,12 +174,10 @@ def stream():
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
     )
 
-
 # ⬇️ ДОБАВЛЕНО: страница мониторинга
 @app.route('/monitor')
 def monitor():
     return render_template('monitor.html')
-
 
 if __name__ == '__main__':
     # ⬇️ ИЗМЕНЕНО: порт по умолчанию 3000 (требование Amvera)
