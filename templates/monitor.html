@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Мониторинг загрузок</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; margin: 0; }
+        h1 { color: #667eea; }
+        a { color: #667eea; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; font-size: 14px; }
+        th { background: #16213e; color: #667eea; }
+        tr:hover { background: #0f3460; }
+        .status-downloading { color: #4ade80; }
+        .status-processing { color: #fbbf24; }
+        .status-error { color: #ef4444; }
+        .progress-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+        .progress-fill { height: 100%; background: #667eea; transition: width 0.3s ease; }
+        .empty-message { text-align: center; padding: 40px; color: #888; }
+        .url-cell { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        code { background: #16213e; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>📊 Мониторинг активных загрузок</h1>
+    <p>Обновляется в реальном времени. <a href="/">← На главную</a></p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Ссылка</th>
+                <th>Статус</th>
+                <th>Прогресс</th>
+                <th>Скорость</th>
+                <th>Осталось</th>
+            </tr>
+        </thead>
+        <tbody id="download-table">
+            <tr><td colspan="6" class="empty-message">Ожидание загрузок...</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        const tableBody = document.getElementById('download-table');
+        const eventSource = new EventSource('/stream');
+
+        eventSource.onmessage = function(event) {
+            const downloads = JSON.parse(event.data);
+
+            if (downloads.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="empty-message">Ожидание загрузок...</td></tr>';
+                return;
+            }
+
+            tableBody.innerHTML = downloads.map(d => {
+                const statusClass = `status-${d.status}`;
+                const statusText = {
+                    'downloading': '⬇️ Скачивание',
+                    'processing': '⚙️ Обработка',
+                    'error': '❌ Ошибка'
+                }[d.status] || d.status;
+
+                const speed = d.speed ? `${(d.speed / 1024 / 1024).toFixed(1)} МБ/с` : '—';
+                const eta = d.eta ? `${Math.floor(d.eta / 60)}:${(d.eta % 60).toString().padStart(2, '0')}` : '—';
+
+                return `
+                    <tr>
+                        <td><code>${d.id}</code></td>
+                        <td class="url-cell" title="${d.url}">${d.url}</td>
+                        <td class="${statusClass}">${statusText}</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${d.percent || 0}%"></div>
+                            </div>
+                            <small>${d.percent || 0}%</small>
+                        </td>
+                        <td>${speed}</td>
+                        <td>${eta}</td>
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        eventSource.onerror = function() {
+            tableBody.innerHTML = '<tr><td colspan="6" class="empty-message" style="color:#ef4444;">Соединение потеряно. Обновите страницу.</td></tr>';
+        };
+    </script>
+</body>
+</html>

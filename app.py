@@ -1,17 +1,65 @@
 import os
 import uuid
+import time
+import json
+import threading
 import yt_dlp
-from flask import Flask, render_template, request, send_file, after_this_request
+from flask import (
+    Flask, render_template, request, send_file,
+    after_this_request, Response, stream_with_context,
+)
 
 app = Flask(__name__)
 
-# Папка для временных загрузок — создастся автоматически
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
+# ⬇️ ДОБАВЛЕНО: глобальное хранилище прогресса + блокировка
+download_progress = {}
+progress_lock = threading.Lock()
+
+
+# ⬇️ ДОБАВЛЕНО: класс-хук, который yt-dlp будет вызывать при каждом изменении прогресса
+class MyProgressHook:
+    def __init__(self, download_id, url):
+        self.download_id = download_id
+        self.url = url
+
+    def __call__(self, d):
+        with progress_lock:
+            if d['status'] == 'downloading':
+                total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                downloaded = d.get('downloaded_bytes') or 0
+                percent = (downloaded / total * 100) if total > 0 else 0
+                download_progress[self.download_id] = {
+                    'id': self.download_id,
+                    'url': self.url,
+                    'status': 'downloading',
+                    'percent': round(percent, 1),
+                    'speed': d.get('speed'),
+                    'eta': d.get('eta'),
+                    'filename': os.path.basename(d.get('filename', '') or ''),
+                }
+            elif d['status'] == 'finished':
+                if self.download_id in download_progress:
+                    download_progress[self.download_id].update({
+                        'status': 'processing',
+                        'percent': 100,
+                        'speed': None,
+                        'eta': None,
+                        'filename': os.path.basename(d.get('filename', '') or ''),
+                    })
+            elif d['status'] == 'error':
+                if self.download_id in download_progress:
+                    download_progress[self.download_id].update({
+                        'status': 'error',
+                        'error': 'Download failed',
+                    })
+
+
 def download_video(url):
-    """Скачивает видео по ссылке, возвращает путь к файлу."""
+    """Скачивает видео, возвращает (путь, download_name, download_id)."""
     file_id = str(uuid.uuid4())[:8]
 
     ydl_opts = {
@@ -19,13 +67,35 @@ def download_video(url):
         'format': 'bestvideo*+bestaudio/best',
         'quiet': True,
         'no_warnings': True,
+        # ⬇️ ДОБАВЛЕНО: подключаем хук прогресса
+        'progress_hooks': [MyProgressHook(file_id, url)],
+        # (по желанию) защита от гигантских файлов:
+        # 'max_filesize': 200 * 1024 * 1024,
+        # 'socket_timeout': 30,
     }
+
+    # Регистрируем загрузку как «начатую», до первого хука
+    with progress_lock:
+        download_progress[file_id] = {
+            'id': file_id,
+            'url': url,
+            'status': 'downloading',
+            'percent': 0,
+            'speed': None,
+            'eta': None,
+            'filename': '',
+        }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         if info.get('requested_downloads'):
-            return info['requested_downloads'][0]['filepath']
-        return ydl.prepare_filename(info)
+            path = info['requested_downloads'][0]['filepath']
+        else:
+            path = ydl.prepare_filename(info)
+
+    # Имя для браузера (как было в прошлом коде — без UUID-префикса)
+    download_name = os.path.basename(path).split('_', 1)[-1]
+    return path, download_name, file_id  # ⬅️ теперь 3 значения
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -38,8 +108,9 @@ def index():
         if not url or not url.startswith(('http://', 'https://')):
             error = "Вставь корректную ссылку (должна начинаться с http:// или https://)"
         else:
+            file_id = None  # чтобы можно было убрать запись из progress даже при падении
             try:
-                filepath = download_video(url)
+                filepath, download_name, file_id = download_video(url)
 
                 @after_this_request
                 def cleanup(response):
@@ -47,14 +118,50 @@ def index():
                         os.remove(filepath)
                     except Exception:
                         pass
+                    # ⬇️ ДОБАВЛЕНО: убираем из мониторинга после отправки
+                    with progress_lock:
+                        download_progress.pop(file_id, None)
                     return response
 
-                return send_file(filepath, as_attachment=True)
+                return send_file(
+                    filepath,
+                    as_attachment=True,
+                    download_name=download_name,
+                    mimetype='application/octet-stream',
+                    conditional=True,
+                )
 
             except Exception as e:
+                # ⬇️ ДОБАВЛЕНО: при ошибке тоже чистим мониторинг
+                if file_id:
+                    with progress_lock:
+                        download_progress.pop(file_id, None)
                 error = f"Не удалось скачать: {str(e)[:200]}"
 
     return render_template('index.html', error=error)
+
+
+# ⬇️ ДОБАВЛЕНО: SSE-поток с прогрессом
+@app.route('/stream')
+def stream():
+    def event_stream():
+        while True:
+            with progress_lock:
+                snapshot = list(download_progress.values())
+            yield f"data: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
+            time.sleep(1)
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
+
+
+# ⬇️ ДОБАВЛЕНО: страница мониторинга
+@app.route('/monitor')
+def monitor():
+    return render_template('monitor.html')
 
 
 if __name__ == '__main__':
