@@ -20,6 +20,26 @@ download_progress = {}
 progress_lock = threading.Lock()
 
 
+# ⬇️ COOKIES: ищем файл cookies в папке проекта (локально) или в /data (Amvera)
+cookies_file = None
+_project_dir = os.path.dirname(os.path.abspath(__file__))
+
+cookies_candidates = [
+    "/data/cookies.txt",
+    os.path.join(_project_dir, "cookies_all.txt"),
+    os.path.join(_project_dir, "cookies.txt"),
+]
+
+for candidate in cookies_candidates:
+    if os.path.exists(candidate):
+        cookies_file = candidate
+        size_kb = os.path.getsize(candidate) / 1024
+        print(f"✅ Файл cookies найден: {candidate} ({size_kb:.1f} КБ)", flush=True)
+        break
+else:
+    print("⚠️ Файл cookies не найден. Скачивание с YouTube/TikTok может не работать.", flush=True)
+
+
 # ⬇️ ДОБАВЛЕНО: класс-хук, который yt-dlp будет вызывать при каждом изменении прогресса
 class MyProgressHook:
     def __init__(self, download_id, url):
@@ -64,14 +84,19 @@ def download_video(url):
 
     ydl_opts = {
         'outtmpl': os.path.join(DOWNLOAD_DIR, f'{file_id}_%(title)s.%(ext)s'),
-        'format': 'bestvideo*+bestaudio/best',
+        # ⬇️ ИЗМЕНЕНО: для TikTok надёжнее 'b' (лучший единый файл)
+        'format': 'b',
         'quiet': True,
         'no_warnings': True,
-        # ⬇️ ДОБАВЛЕНО: подключаем хук прогресса
         'progress_hooks': [MyProgressHook(file_id, url)],
-        # (по желанию) защита от гигантских файлов:
-        # 'max_filesize': 200 * 1024 * 1024,
-        # 'socket_timeout': 30,
+        'cookiefile': cookies_file,
+        # ⬇️ КЛЮЧЕВЫЕ НАСТРОЙКИ ДЛЯ TIKTOK
+        'impersonate': 'chrome',  # Имитация браузера Chrome (TLS-отпечаток)
+        'extractor_args': {
+            'tiktok': {
+                'api_hostname': ['api22-normal-c-alisg.tiktokv.com'],
+            },
+        },
     }
 
     # Регистрируем загрузку как «начатую», до первого хука
@@ -93,9 +118,9 @@ def download_video(url):
         else:
             path = ydl.prepare_filename(info)
 
-    # Имя для браузера (как было в прошлом коде — без UUID-префикса)
+    # Имя для браузера (без UUID-префикса)
     download_name = os.path.basename(path).split('_', 1)[-1]
-    return path, download_name, file_id  # ⬅️ теперь 3 значения
+    return path, download_name, file_id
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -108,7 +133,7 @@ def index():
         if not url or not url.startswith(('http://', 'https://')):
             error = "Вставь корректную ссылку (должна начинаться с http:// или https://)"
         else:
-            file_id = None  # чтобы можно было убрать запись из progress даже при падении
+            file_id = None
             try:
                 filepath, download_name, file_id = download_video(url)
 
@@ -118,7 +143,6 @@ def index():
                         os.remove(filepath)
                     except Exception:
                         pass
-                    # ⬇️ ДОБАВЛЕНО: убираем из мониторинга после отправки
                     with progress_lock:
                         download_progress.pop(file_id, None)
                     return response
@@ -132,7 +156,6 @@ def index():
                 )
 
             except Exception as e:
-                # ⬇️ ДОБАВЛЕНО: при ошибке тоже чистим мониторинг
                 if file_id:
                     with progress_lock:
                         download_progress.pop(file_id, None)
@@ -165,5 +188,6 @@ def monitor():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    # ⬇️ ИЗМЕНЕНО: порт по умолчанию 3000 (требование Amvera)
+    port = int(os.environ.get('PORT', 3000))
     app.run(debug=False, host='0.0.0.0', port=port)

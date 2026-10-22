@@ -3,5 +3,5 @@ meta:
   toolchain:
     name: pip
 run:
-  command: gunicorn --bind 0.0.0.0:5000 --workers 1 --threads 8 --worker-class gthread --timeout 300 app:app
-  containerPort: 5000
+  command: gunicorn --bind 0.0.0.0:3000 --workers 1 --threads 8 --worker-class gthread --timeout 300 app:app
+  containerPort: 3000
