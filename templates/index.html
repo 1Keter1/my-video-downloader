@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>🎬 Video Downloader</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 520px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { margin: 0 0 8px; font-size: 26px; }
+        .subtitle { color: #666; margin: 0 0 24px; font-size: 15px; }
+        input[type=url] {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color .2s;
+        }
+        input[type=url]:focus { border-color: #667eea; }
+        button {
+            width: 100%;
+            margin-top: 12px;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            background: #667eea;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background .2s;
+        }
+        button:hover:not(:disabled) { background: #5568d3; }
+        button:disabled { background: #aaa; cursor: wait; }
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        .status {
+            margin-top: 14px;
+            text-align: center;
+            color: #667eea;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🎬 Video Downloader</h1>
+        <p class="subtitle">Вставь ссылку — файл скачается автоматически</p>
+
+        {% if error %}
+            <div class="error">⚠️ {{ error }}</div>
+        {% endif %}
+
+        <form method="POST" id="dl-form">
+            <input type="url" name="url"
+                   placeholder="https://youtube.com/watch?v=..."
+                   required autofocus>
+            <button type="submit" id="dl-btn">Скачать</button>
+        </form>
+
+        <div class="status" id="status">
+            ⏳ Скачиваю, подождите (может занять до минуты)...
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('dl-form').addEventListener('submit', () => {
+            document.getElementById('dl-btn').disabled = true;
+            document.getElementById('dl-btn').textContent = 'Скачивается...';
+            document.getElementById('status').style.display = 'block';
+        });
+    </script>
+</body>
+</html>
